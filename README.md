@@ -83,3 +83,81 @@ export default defineConfig({
 })
 
 ```
+
+## 渲染进程集成内置模块
+首先我们修改一下主进程的代码，打开渲染进程的一些开关，允许渲染进程使用 Node.js 的内置模块，如下代码所示：
+```js
+import { app, BrowserWindow } from "electron";
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
+let mainWindow;
+
+app.whenReady().then(() => {
+  let config = {
+    webPreferences: {
+      nodeIntegration: true,
+      webSecurity: false,
+      allowRunningInsecureContent: true,
+      contextIsolation: false,
+      webviewTag: true,
+      spellcheck: false,
+      disableHtmlFullscreenWindowResize: true,
+    },
+  };
+  mainWindow = new BrowserWindow(config);
+  mainWindow.webContents.openDevTools({ mode: "undocked" });
+  mainWindow.loadURL(process.argv[2]);
+});
+```
+
+## 设置 Vite 模块别名与模块解析钩子
+首先我们为工程安装一个 Vite 组件：vite-plugin-optimizer。
+```shell
+npm i vite-plugin-optimizer -D
+```
+getReplacer 方法是我们为 vite-plugin-optimizer 插件提供的内置模块列表。代码如下所示：
+```js
+export const getReplacer = () => {
+  let externalModels = ["os", "fs", "path", "events", "child_process", "crypto", "http", "buffer", "url", "better-sqlite3", "knex"];
+  let result = {};
+  for (let item of externalModels) {
+    result[item] = () => ({
+      find: new RegExp(`^${item}$`),
+      code: `const ${item} = require('${item}');export { ${item} as default }`,
+    });
+  }
+  result["electron"] = () => {
+    let electronModules = ["clipboard", "ipcRenderer", "nativeImage", "shell", "webFrame"].join(",");
+    return {
+      find: new RegExp(`^electron$`),
+      code: `const {${electronModules}} = require('electron');export {${electronModules}}`,
+    };
+  };
+  return result;
+};
+```
+然后修改 vite.config.ts 的代码，让 Vite 加载这个插件，如下代码所示：
+```js
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import { devPlugin, getReplacer } from "./plugins/devPlugin";
+import optimizer from "vite-plugin-optimizer";
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [optimizer(getReplacer()),devPlugin(), vue()]
+})
+
+```
+再次运行你的应用，看看现在渲染进程是否可以正确加载内置模块了呢？你可以通过如下代码在 Vue 组件中做这项测试：
+```js
+//src\App.vue
+import fs from "fs";
+import { ipcRenderer } from "electron";
+import { onMounted } from "vue";
+onMounted(() => {
+  console.log(fs.writeFileSync);
+  console.log(ipcRenderer);
+});
+```
+
+
+
