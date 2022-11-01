@@ -1,5 +1,10 @@
 <script setup>
 import BarLeft from "../components/BarLeft.vue";
+import { ipcRenderer } from "electron";
+import { onMounted } from "vue";
+onMounted(() => {
+  ipcRenderer.invoke("showWindow");
+});
 </script>
 
 <template>
